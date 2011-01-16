@@ -1,29 +1,41 @@
 <?php
-
 include_once ('includes/getid3/getid3.php');
-include_once(GETID3_INCLUDEPATH.'getid3.functions.php'); // Function library
+include_once (GETID3_INCLUDEPATH.'getid3.functions.php'); // Function library
 include_once ('includes/db_conf.php');
 
-$directory = "/mediaRAID/drop_mp3_here/bcs/";
+mysql_connect($db_host,$db_user,$db_pass) or die(mysql_error());
+mysql_select_db($db_database) or die(mysql_error());
 
-$files = scandir($directory);
+$start_directory = "/mediaRAID/drop_mp3_here/music";
 
-var_dump($files);
+/*$files = scandir($directory);*/
 
-/*$temp_fileout = "query_file.txt";
-$fw = fopen($temp_fileout,'w');*/
+/*var_dump($files);*/
 
-foreach ($files as $file) {
+DEFINE ("FILEOUT", "query_file.txt");
 
-	if ($file == "." or $file == "..") continue;
+subdir_scan($start_directory);
 
-	$filename = $directory.$file;
+function subdir_scan($directory){
+	$files = scandir($directory);
 
-	if (is_dir($filename)) continue;
+	foreach ($files as $file) {
+
+		if ($file == "." or $file == "..") continue;
+
+		if (is_dir($directory."/".$file)){
+			subdir_scan($directory."/".$file);
+		} else {
+			file_to_db($directory."/".$file);
+		}
+	}
+}
+
+function file_to_db($filename){
+
+	$directory = dirname($filename);
 
 	$filemd5 = md5_file($filename);
-
-	echo $filename."\n".$filemd5."\n";
 
 	$fileinfo = GetAllMP3info($filename, '');
 	if (!isset($MP3fileInfo['fileformat']) || ($MP3fileInfo['fileformat'] == '')) {
@@ -33,10 +45,7 @@ foreach ($files as $file) {
                 }
         }
 
-	foreach ($fileinfo as $key => $value) {
-		if (is_array($value)) continue;
-		$fileinfo[$key] = mysql_real_escape_string($value);
-	}
+	if ($fileinfo['fileformat'] == "mp3") {
 
 	if (array_key_exists('id3v2',$fileinfo['id3'])){
 		$id3 = $fileinfo['id3']['id3v2'];
@@ -44,13 +53,12 @@ foreach ($files as $file) {
 		$id3 = $fileinfo['id3']['id3v1'];
 	}
 
-	foreach ($id3 as $key => $value) {
-		if (is_array($value)) continue;
-		$id3[$key] = mysql_real_escape_string($value);
-	}
+	clean_array($fileinfo);
+	clean_array($id3);
 
+	/* MUST ADD FULL ESCAPING */
 	mysql_real_escape_string($filemd5);
-	mysql_real_escape_string($file);
+	mysql_real_escape_string($filename);
 	mysql_real_escape_string($directory);
 
 	$dbq = "INSERT INTO `dm_music`(
@@ -71,7 +79,7 @@ foreach ($files as $file) {
 	`file_playtime_string`)
 	VALUES (
 	'$filemd5',
-	'$file',
+	'$filename',
 	'$directory',
 	'".$fileinfo['fileformat']."',
 	'".$fileinfo['filesize']."',
@@ -86,9 +94,23 @@ foreach ($files as $file) {
 	'".$fileinfo['playtime_seconds']."',
 	'".$fileinfo['playtime_string']."');\n";
 
-	/*fwrite($fw,$dbq);*/
+	$fw = fopen(FILEOUT,'a+');
+	fwrite($fw,$dbq);
 
-	mysql_query($dbq) or die (mysql_error());
+	echo $filename." - ".$filemd5."\n";
+
+	/*mysql_query($dbq) or die (mysql_error());*/
+
+	}
 
 }
+
+function clean_array($array){
+	foreach ($array as $key => $value){
+		if (is_array($value)) continue;
+		$array[$key] = mysql_real_escape_string($value);
+	}
+	return $array;
+}
+
 ?>
